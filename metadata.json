@@ -1,0 +1,6 @@
+{
+  "name": "enzvuck icon",
+  "description": "Android icon editor and icon pack generator. Customise your icons.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

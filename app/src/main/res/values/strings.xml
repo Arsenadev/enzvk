@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">enzvuck icon</string>
+    <string name="tagline">customise your icons.</string>
+    <string name="nav_apps">Apps</string>
+    <string name="nav_my_icons">My Icons</string>
+    <string name="nav_packs">Packs</string>
+    <string name="nav_preview">Preview</string>
+    <string name="nav_settings">Settings</string>
+</resources>
