@@ -14,8 +14,10 @@ import com.enzvuck.icon.domain.model.EditorConfiguration
 import com.enzvuck.icon.domain.model.IconPack
 import com.enzvuck.icon.domain.model.IconPackItem
 import com.enzvuck.icon.domain.model.IconShape
+import com.enzvuck.icon.export.ResourceNameNormalizer
 import com.enzvuck.icon.export.ThemePackager
 import com.enzvuck.icon.icons.InstalledAppsManager
+import com.enzvuck.icon.launcher.LauncherThemeHelper
 import com.enzvuck.icon.storage.StorageManager
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,12 +58,16 @@ data class AppUiState(
     val themeMode: String = "dark", // "dark", "light", "system"
     val defaultShape: IconShape = IconShape.ROUNDED_SQUARE,
     val defaultBackground: BackgroundType = BackgroundType.TRANSPARENT,
-    val defaultExportFormat: String = "WEBP" // "WEBP", "PNG"
+    val defaultExportFormat: String = "WEBP", // "WEBP", "PNG"
+    val iconForPackPicker: CustomIcon? = null,
+    val isPackPickerOpen: Boolean = false,
+    val unsupportedLauncherNoticePack: IconPack? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val repository: IconRepository
+    val launcherThemeHelper: LauncherThemeHelper = LauncherThemeHelper(application)
 
     private val _uiState = MutableStateFlow(AppUiState())
     val uiState: StateFlow<AppUiState> = _uiState.asStateFlow()
@@ -221,18 +227,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Saves the edited icon cleanly. No watermark, no E logo, no shortcuts!
+     * Dynamically detects launcherActivity and generates canonical resourceName.
      */
     fun saveEditorIcon(renderedBitmap: Bitmap) {
         val app = _uiState.value.selectedApp ?: return
         val config = _uiState.value.editorConfig
         viewModelScope.launch {
             try {
+                val launcherActivity = app.launcherActivity.ifBlank {
+                    repository.appsManager.getLauncherActivityForPackage(app.packageName)
+                }
+                val resourceName = ResourceNameNormalizer.normalize(app.packageName, app.appName)
+
                 repository.saveCustomIcon(
                     packageName = app.packageName,
                     appName = app.appName,
                     bitmap = renderedBitmap,
                     sourceImagePath = null,
-                    configuration = config
+                    configuration = config,
+                    launcherActivity = launcherActivity,
+                    resourceName = resourceName
                 )
                 closeEditor()
                 emitToast("Custom icon saved for ${app.appName}")
@@ -273,6 +287,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 emitToast("Failed to duplicate: ${e.message}")
             }
         }
+    }
+
+    fun openAddToPack(icon: CustomIcon) {
+        if (iconPacks.value.isEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                isCreatingPack = true,
+                iconForPackPicker = icon
+            )
+        } else {
+            _uiState.value = _uiState.value.copy(
+                isPackPickerOpen = true,
+                iconForPackPicker = icon
+            )
+        }
+    }
+
+    fun dismissPackPicker() {
+        _uiState.value = _uiState.value.copy(
+            isPackPickerOpen = false,
+            iconForPackPicker = null
+        )
+    }
+
+    fun addIconToPack(packId: Long, icon: CustomIcon) {
+        viewModelScope.launch {
+            try {
+                val ok = repository.addIconToPack(packId, icon)
+                if (ok) {
+                    val pack = iconPacks.value.find { it.id == packId }
+                    val name = pack?.name ?: "pack"
+                    emitToast("Added ${icon.appName} to $name")
+                } else {
+                    emitToast("Failed to add icon to pack")
+                }
+                dismissPackPicker()
+            } catch (e: Exception) {
+                emitToast("Error adding to pack: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Handles Apply / Open Theme flow.
+     * If the current launcher supports third-party icon packs via public API, launches the apply flow.
+     * If the launcher does NOT support direct icon-pack application, displays the compatibility dialog:
+     * "Your launcher doesn't support direct icon-pack application from this app."
+     * with options to Export Icon Pack, Export Theme ZIP, and Export Icons.
+     * Never pretends an icon was applied.
+     */
+    fun requestApplyPack(pack: IconPack) {
+        val launcherInfo = launcherThemeHelper.getCurrentLauncher()
+        if (!launcherInfo.supportsDirectApply) {
+            _uiState.value = _uiState.value.copy(unsupportedLauncherNoticePack = pack)
+        } else {
+            val intent = launcherThemeHelper.buildApplyIntent("com.enzvuck.iconpack.${pack.name.replace(Regex("[^a-zA-Z0-9_-]"), "_").lowercase()}")
+            if (intent != null) {
+                try {
+                    getApplication<Application>().startActivity(intent)
+                    emitToast("Opening ${launcherInfo.launcherName} theme settings...")
+                } catch (e: Exception) {
+                    _uiState.value = _uiState.value.copy(unsupportedLauncherNoticePack = pack)
+                }
+            } else {
+                _uiState.value = _uiState.value.copy(unsupportedLauncherNoticePack = pack)
+            }
+        }
+    }
+
+    fun dismissUnsupportedLauncherNotice() {
+        _uiState.value = _uiState.value.copy(unsupportedLauncherNoticePack = null)
     }
 
     fun createIconPack(

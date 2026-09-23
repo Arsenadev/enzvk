@@ -193,7 +193,7 @@ fun CustomIconGridCard(
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        "Custom",
+                        "Custom icon saved",
                         color = AccentLime,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold

@@ -163,7 +163,7 @@ fun AppDetailDialog(
                         color = TextSecondary
                     )
                     Text(
-                        text = if (app.isCustomized) "Custom" else "Original",
+                        text = if (app.isCustomized) "Custom icon saved" else "Original",
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                         color = if (app.isCustomized) AccentLime else TextMuted
                     )

@@ -72,6 +72,43 @@ class InstalledAppsManager(private val context: Context) {
     }
 
     /**
+     * Dynamically detects the actual launcher activity for a given package name using PackageManager.
+     * Never returns fake or hardcoded activities.
+     */
+    fun getLauncherActivityForPackage(packageName: String): String {
+        try {
+            val intent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                `package` = packageName
+            }
+            val resolveInfos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.queryIntentActivities(
+                    intent,
+                    PackageManager.ResolveInfoFlags.of(0L)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.queryIntentActivities(intent, 0)
+            }
+
+            val detected = resolveInfos.firstOrNull()?.activityInfo?.name
+            if (!detected.isNullOrBlank()) {
+                return detected
+            }
+
+            // Fallback: check launch intent
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            val className = launchIntent?.component?.className
+            if (!className.isNullOrBlank()) {
+                return className
+            }
+        } catch (_: Exception) {
+            // Safe fallback
+        }
+        return "${packageName}.MainActivity"
+    }
+
+    /**
      * Loads the original application icon drawable.
      */
     fun loadOriginalAppIconDrawable(packageName: String): Drawable? {

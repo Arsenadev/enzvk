@@ -16,7 +16,7 @@ import com.enzvuck.icon.data.entity.IconPackItemEntity
         IconPackEntity::class,
         IconPackItemEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class EnzvuckDatabase : RoomDatabase() {

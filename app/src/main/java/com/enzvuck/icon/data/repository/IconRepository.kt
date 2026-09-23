@@ -51,18 +51,28 @@ class IconRepository(
 
     /**
      * Saves a custom icon: writes image file without watermarks, saves record in database.
+     * Stores packageName, dynamically detected launcherActivity, normalized resourceName, and iconPath.
      */
     suspend fun saveCustomIcon(
         packageName: String,
         appName: String,
         bitmap: Bitmap,
         sourceImagePath: String?,
-        configuration: EditorConfiguration
+        configuration: EditorConfiguration,
+        launcherActivity: String? = null,
+        resourceName: String? = null
     ): CustomIcon = withContext(Dispatchers.IO) {
         val savedIconPath = storageManager.saveCustomIcon(packageName, bitmap)
+        val detectedLauncherActivity = launcherActivity?.ifBlank { null }
+            ?: appsManager.getLauncherActivityForPackage(packageName)
+        val computedResourceName = resourceName?.ifBlank { null }
+            ?: ResourceNameNormalizer.normalize(packageName, appName)
+
         val entity = CustomIconEntity(
             packageName = packageName,
             appName = appName,
+            launcherActivity = detectedLauncherActivity,
+            resourceName = computedResourceName,
             iconPath = savedIconPath,
             sourceImagePath = sourceImagePath,
             configurationJson = configuration.toJsonString(),
@@ -89,6 +99,8 @@ class IconRepository(
         val entity = CustomIconEntity(
             packageName = newPackage,
             appName = "${icon.appName} (Copy)",
+            launcherActivity = icon.launcherActivity.ifBlank { appsManager.getLauncherActivityForPackage(icon.packageName) },
+            resourceName = "${icon.resourceName.ifBlank { ResourceNameNormalizer.normalize(icon.packageName, icon.appName) }}_copy",
             iconPath = newPath,
             sourceImagePath = icon.sourceImagePath,
             configurationJson = icon.configuration.toJsonString(),
@@ -125,8 +137,13 @@ class IconRepository(
         val appMap = installedApps.associateBy { it.packageName }
         val itemEntities = selectedIcons.map { icon ->
             val app = appMap[icon.packageName]
-            val launcherActivity = app?.launcherActivity ?: "${icon.packageName}.MainActivity"
-            val drawableName = ResourceNameNormalizer.normalize(icon.packageName, icon.appName)
+            val launcherActivity = icon.launcherActivity.ifBlank {
+                app?.launcherActivity?.ifBlank { null }
+                    ?: appsManager.getLauncherActivityForPackage(icon.packageName)
+            }
+            val drawableName = icon.resourceName.ifBlank {
+                ResourceNameNormalizer.normalize(icon.packageName, icon.appName)
+            }
 
             IconPackItemEntity(
                 packId = packId,
@@ -139,6 +156,44 @@ class IconRepository(
         }
         iconPackDao.insertPackItems(itemEntities)
         packId
+    }
+
+    /**
+     * Adds an existing custom icon to an existing icon pack.
+     */
+    suspend fun addIconToPack(packId: Long, icon: CustomIcon): Boolean = withContext(Dispatchers.IO) {
+        val pack = iconPackDao.getPackById(packId) ?: return@withContext false
+        val existingItems = iconPackDao.getItemsForPackSync(packId)
+        val alreadyInPack = existingItems.find { it.packageName == icon.packageName }
+        val launcherActivity = icon.launcherActivity.ifBlank {
+            appsManager.getLauncherActivityForPackage(icon.packageName)
+        }
+        val drawableName = icon.resourceName.ifBlank {
+            ResourceNameNormalizer.normalize(icon.packageName, icon.appName)
+        }
+
+        if (alreadyInPack != null) {
+            val updated = alreadyInPack.copy(
+                customIconId = icon.id,
+                launcherActivity = launcherActivity,
+                drawableName = drawableName
+            )
+            iconPackDao.insertPackItems(listOf(updated))
+        } else {
+            val newItem = IconPackItemEntity(
+                packId = packId,
+                customIconId = icon.id,
+                packageName = icon.packageName,
+                appName = icon.appName,
+                launcherActivity = launcherActivity,
+                drawableName = drawableName
+            )
+            iconPackDao.insertPackItems(listOf(newItem))
+        }
+
+        val updatedCount = iconPackDao.getItemsForPackSync(packId).size
+        iconPackDao.updatePack(pack.copy(iconCount = updatedCount, updatedAt = System.currentTimeMillis()))
+        true
     }
 
     suspend fun deletePack(packId: Long) = withContext(Dispatchers.IO) {
@@ -169,6 +224,8 @@ class IconRepository(
             id = id,
             packageName = packageName,
             appName = appName,
+            launcherActivity = launcherActivity,
+            resourceName = resourceName,
             iconPath = iconPath,
             sourceImagePath = sourceImagePath,
             configuration = EditorConfiguration.fromJsonString(configurationJson),

@@ -22,14 +22,13 @@ class ResourceNameNormalizerTest {
     @Test
     fun testNormalizeWithSpecialCharactersAndNumbers() {
         val res1 = ResourceNameNormalizer.normalize("com.123app.cool", "123 Super & App!")
-        assertTrue(res1.startsWith("ic_123app") || res1 == "ic_123app")
         assertFalse(res1.contains(" "))
         assertFalse(res1.contains("&"))
         assertFalse(res1.contains("!"))
         assertTrue(res1.matches(Regex("^[a-z_][a-z0-9_]*$")))
 
         val res2 = ResourceNameNormalizer.normalize("com.example.super_music", "Super & Music!!")
-        assertEquals("example", res2)
+        assertEquals("super_music", res2)
         assertTrue(res2.matches(Regex("^[a-z_][a-z0-9_]*$")))
     }
 

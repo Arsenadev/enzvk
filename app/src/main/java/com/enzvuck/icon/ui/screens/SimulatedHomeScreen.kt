@@ -61,12 +61,20 @@ fun SimulatedHomeScreen(
 ) {
     val customIconMap = customIcons.associateBy { it.packageName }
 
-    // Take a selection of popular apps or customized apps
-    val previewApps = if (installedApps.isNotEmpty()) {
-        installedApps.take(12)
-    } else {
-        emptyList()
+    // Prioritize customized apps first, so user's custom icons appear prominently on the home screen preview!
+    val customizedAppInfos = customIcons.map { custom ->
+        installedApps.find { it.packageName == custom.packageName }
+            ?: AppInfo(
+                packageName = custom.packageName,
+                appName = custom.appName,
+                launcherActivity = custom.launcherActivity,
+                isCustomized = true,
+                customIconPath = custom.iconPath
+            )
     }
+
+    val remainingInstalledApps = installedApps.filter { it.packageName !in customIconMap }
+    val previewApps = (customizedAppInfos + remainingInstalledApps).take(12)
 
     Column(
         modifier = modifier

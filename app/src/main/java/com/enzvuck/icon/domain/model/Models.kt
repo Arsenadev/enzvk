@@ -8,7 +8,7 @@ import org.json.JSONObject
 data class AppInfo(
     val packageName: String,
     val appName: String,
-    val launcherActivity: String,
+    val launcherActivity: String = "",
     val isCustomized: Boolean = false,
     val customIconId: Long? = null,
     val customIconPath: String? = null
@@ -329,6 +329,8 @@ data class CustomIcon(
     val id: Long = 0,
     val packageName: String,
     val appName: String,
+    val launcherActivity: String = "",
+    val resourceName: String = "",
     val iconPath: String,
     val sourceImagePath: String? = null,
     val configuration: EditorConfiguration = EditorConfiguration(),

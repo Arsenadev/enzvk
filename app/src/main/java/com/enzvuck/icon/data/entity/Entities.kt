@@ -14,6 +14,8 @@ data class CustomIconEntity(
     val id: Long = 0,
     val packageName: String,
     val appName: String,
+    val launcherActivity: String = "",
+    val resourceName: String = "",
     val iconPath: String,
     val sourceImagePath: String?,
     val configurationJson: String,

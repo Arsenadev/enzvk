@@ -89,14 +89,16 @@ fun IconPacksScreen(
     onOpenCreatePack: () -> Unit,
     onCloseCreatePack: () -> Unit,
     onCreatePackSubmit: (name: String, desc: String, author: String, ver: String, icons: List<CustomIcon>) -> Unit,
+    onApplyPack: (IconPack) -> Unit,
     onExportThemeZip: (IconPack) -> Unit,
     onExportIconsZip: (IconPack) -> Unit,
     onExportPackProject: (IconPack) -> Unit,
+    onExportApk: (IconPack) -> Unit,
     onDeletePack: (Long) -> Unit,
+    unsupportedLauncherNoticePack: IconPack? = null,
+    onDismissLauncherNotice: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var apkNoticePackName by remember { mutableStateOf<String?>(null) }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -182,10 +184,11 @@ fun IconPacksScreen(
                 items(iconPacks, key = { it.id }) { pack ->
                     IconPackItemCard(
                         pack = pack,
+                        onApplyTheme = { onApplyPack(pack) },
                         onExportTheme = { onExportThemeZip(pack) },
                         onExportIcons = { onExportIconsZip(pack) },
                         onExportProject = { onExportPackProject(pack) },
-                        onExportApk = { apkNoticePackName = pack.name },
+                        onExportApk = { onExportApk(pack) },
                         onDelete = { onDeletePack(pack.id) }
                     )
                 }
@@ -202,31 +205,99 @@ fun IconPacksScreen(
         )
     }
 
-    // APK notice dialog (Section 29 & 35)
-    if (apkNoticePackName != null) {
+    // Launcher compatibility notice dialog
+    if (unsupportedLauncherNoticePack != null) {
+        val pack = unsupportedLauncherNoticePack
         AlertDialog(
-            onDismissRequest = { apkNoticePackName = null },
+            onDismissRequest = onDismissLauncherNotice,
             title = {
-                Text("APK Export Notice", fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text("Launcher Compatibility", fontWeight = FontWeight.Bold, color = TextPrimary)
             },
             text = {
                 Column {
                     Text(
-                        text = "APK generation is unavailable on this device.",
-                        fontWeight = FontWeight.SemiBold,
-                        color = AccentLime
+                        text = "Your launcher doesn't support direct icon-pack application from this app.",
+                        fontWeight = FontWeight.Bold,
+                        color = AccentLime,
+                        fontSize = 15.sp
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "Android does not include on-device DEX / AAPT binary linkers. Never create a fake APK!\n\nUse 'Portable Theme ZIP' (usable in launchers like Nova/Smart/Lawnchair) or 'Export Icon Pack Project' to build a signed APK on your computer.",
+                        text = "Standard Android launchers (such as Pixel Launcher, Samsung One UI, or standard system home) do not allow apps to replace icons dynamically without shortcuts.\n\nExport your pack in a standard format below to apply it through a compatible launcher or theme manager:",
                         color = TextSecondary,
-                        fontSize = 13.sp
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
                     )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 1. Export Icon Pack
+                    Button(
+                        onClick = {
+                            onDismissLauncherNotice()
+                            onExportPackProject(pack)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("dialog_export_icon_pack"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AccentLime,
+                            contentColor = TextOnAccent
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.FolderZip, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Export Icon Pack", fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 2. Export Theme ZIP
+                    OutlinedButton(
+                        onClick = {
+                            onDismissLauncherNotice()
+                            onExportThemeZip(pack)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("dialog_export_theme_zip"),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                        border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
+                            brush = androidx.compose.ui.graphics.SolidColor(BorderDark)
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.FolderZip, contentDescription = null, modifier = Modifier.size(16.dp), tint = AccentLime)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Export Theme ZIP")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 3. Export Icons
+                    OutlinedButton(
+                        onClick = {
+                            onDismissLauncherNotice()
+                            onExportIconsZip(pack)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("dialog_export_icons"),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                        border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
+                            brush = androidx.compose.ui.graphics.SolidColor(BorderDark)
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Archive, contentDescription = null, modifier = Modifier.size(16.dp), tint = AccentCyan)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Export Icons")
+                    }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { apkNoticePackName = null }) {
-                    Text("Understood", color = AccentLime, fontWeight = FontWeight.Bold)
+                TextButton(onClick = onDismissLauncherNotice) {
+                    Text("Close", color = TextSecondary)
                 }
             },
             containerColor = SurfaceDark
@@ -237,6 +308,7 @@ fun IconPacksScreen(
 @Composable
 fun IconPackItemCard(
     pack: IconPack,
+    onApplyTheme: () -> Unit,
     onExportTheme: () -> Unit,
     onExportIcons: () -> Unit,
     onExportProject: () -> Unit,
@@ -292,6 +364,25 @@ fun IconPackItemCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Primary Apply / Open Theme button
+            Button(
+                onClick = onApplyTheme,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("apply_theme_button_${pack.id}"),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AccentLime,
+                    contentColor = TextOnAccent
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Android, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Apply / Open Theme", fontWeight = FontWeight.Bold)
             }
 
             Spacer(modifier = Modifier.height(16.dp))

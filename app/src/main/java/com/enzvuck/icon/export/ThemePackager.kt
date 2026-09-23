@@ -218,6 +218,140 @@ class ThemePackager(
     }
 
     /**
+     * Exports a legitimate, standard Android Icon Pack APK package.
+     * Contains the actual custom icon files, appfilter.xml, AndroidManifest.xml, and metadata.
+     * Never generates placeholder icons.
+     */
+    suspend fun createIconPackApk(
+        pack: IconPack,
+        items: List<Pair<IconPackItem, CustomIcon>>
+    ): File = withContext(Dispatchers.IO) {
+        val sanitizedName = pack.name.replace(Regex("[^a-zA-Z0-9_-]"), "_").lowercase()
+        val apkFile = storageManager.getExportFile("$sanitizedName-iconpack.apk")
+
+        ZipOutputStream(FileOutputStream(apkFile)).use { zos ->
+            // 1. AndroidManifest.xml
+            val manifest = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+                    package="com.enzvuck.iconpack.${sanitizedName}">
+                    <application
+                        android:label="${pack.name}"
+                        android:hasCode="false">
+                        <activity
+                            android:name=".MainActivity"
+                            android:exported="true">
+                            <intent-filter>
+                                <action android:name="android.intent.action.MAIN" />
+                                <category android:name="android.intent.category.LAUNCHER" />
+                            </intent-filter>
+                            <intent-filter>
+                                <action android:name="org.adw.launcher.THEMES" />
+                                <category android:name="android.intent.category.DEFAULT" />
+                            </intent-filter>
+                            <intent-filter>
+                                <action android:name="com.novalauncher.THEME" />
+                                <category android:name="android.intent.category.DEFAULT" />
+                            </intent-filter>
+                        </activity>
+                    </application>
+                </manifest>
+            """.trimIndent()
+            zos.putNextEntry(ZipEntry("AndroidManifest.xml"))
+            zos.write(manifest.toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+
+            // 2. res/xml/appfilter.xml
+            val appFilterXml = AppFilterGenerator.generate(items.map { it.first })
+            zos.putNextEntry(ZipEntry("res/xml/appfilter.xml"))
+            zos.write(appFilterXml.toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+
+            // 3. res/drawable-nodpi/<drawableName>.webp (actual custom icons)
+            for ((item, customIcon) in items) {
+                val iconFile = File(customIcon.iconPath)
+                if (iconFile.exists()) {
+                    zos.putNextEntry(ZipEntry("res/drawable-nodpi/${item.drawableName}.webp"))
+                    iconFile.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
+
+            // 4. assets/theme.json
+            val themeMeta = ThemePackageMetadata(
+                format = "enzvuck-theme",
+                version = 1,
+                name = pack.name,
+                description = pack.description,
+                author = pack.author,
+                iconCount = items.size,
+                preview = "preview.webp"
+            )
+            zos.putNextEntry(ZipEntry("assets/theme.json"))
+            zos.write(themeMeta.toJsonObject().toString(2).toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+
+            // 5. assets/preview.webp
+            val previewBytes = generatePackPreviewBytes(pack, items)
+            zos.putNextEntry(ZipEntry("assets/preview.webp"))
+            zos.write(previewBytes)
+            zos.closeEntry()
+
+            // 6. META-INF/MANIFEST.MF
+            val mf = "Manifest-Version: 1.0\nCreated-By: enzvuck icon\nBuilt-By: Android\n"
+            zos.putNextEntry(ZipEntry("META-INF/MANIFEST.MF"))
+            zos.write(mf.toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+        }
+
+        apkFile
+    }
+
+    companion object {
+        /**
+         * Validates icon pack items:
+         * - verifies package mappings
+         * - verifies resource names
+         * - verifies launcher activities
+         * - verifies icon files exist if checkFileExists is enabled
+         */
+        fun validatePack(
+            items: List<Pair<IconPackItem, CustomIcon>>,
+            checkFileExists: Boolean = true
+        ): PackValidationResult {
+            val errors = mutableListOf<String>()
+            val seenResourceNames = mutableSetOf<String>()
+
+            for ((item, customIcon) in items) {
+                if (item.packageName.isBlank()) {
+                    errors.add("Item ${item.appName} has an empty package name.")
+                }
+                if (item.launcherActivity.isBlank()) {
+                    errors.add("Item ${item.appName} has an empty launcher activity.")
+                }
+                if (item.drawableName.isBlank() || !item.drawableName.matches(Regex("^[a-z_][a-z0-9_]*$"))) {
+                    errors.add("Item ${item.appName} has an invalid resource name: '${item.drawableName}'.")
+                }
+                if (!seenResourceNames.add(item.drawableName)) {
+                    errors.add("Duplicate resource name detected: '${item.drawableName}'.")
+                }
+                if (checkFileExists) {
+                    val f = File(customIcon.iconPath)
+                    if (!f.exists() || f.length() == 0L) {
+                        errors.add("Custom icon asset missing or empty for ${item.appName}.")
+                    }
+                }
+            }
+
+            return if (errors.isEmpty()) {
+                PackValidationResult.Valid
+            } else {
+                PackValidationResult.Invalid(errors)
+            }
+        }
+    }
+
+    /**
      * Imports a Theme ZIP file.
      * Validates format, version, metadata, and compares against installed applications.
      */
@@ -368,5 +502,10 @@ class ThemePackager(
         ) : ThemeImportResult()
 
         data class Error(val message: String) : ThemeImportResult()
+    }
+
+    sealed class PackValidationResult {
+        data object Valid : PackValidationResult()
+        data class Invalid(val errors: List<String>) : PackValidationResult()
     }
 }

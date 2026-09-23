@@ -12,19 +12,33 @@ package com.enzvuck.icon.export
  */
 object ResourceNameNormalizer {
 
+    private val commonPrefixes = setOf("com", "org", "net", "io", "android", "google", "app", "apps")
+    private val genericSuffixes = setOf("android", "music", "app", "apps", "mobile", "client", "release", "free", "pro", "ltd", "inc", "corp", "dev", "studio", "ui", "view", "phone")
+
     /**
-     * Normalizes a package name (e.g. "com.spotify.music" -> "spotify", "org.telegram.messenger" -> "telegram")
-     * or an app name (e.g. "Google Chrome" -> "chrome") into a clean resource name.
+     * Normalizes a package name (e.g. "com.openai.chatgpt" -> "chatgpt", "com.spotify.music" -> "spotify", "org.telegram.messenger" -> "telegram")
+     * or an app name (e.g. "ChatGPT" -> "chatgpt") into a clean resource name.
      */
     fun normalize(packageName: String, appName: String? = null): String {
-        // First try deriving a clean name from the package name
+        val parts = packageName.split('.').filter { it.isNotBlank() }
+
+        // 1. If clean appName matches any package component, that's the best candidate (e.g. "ChatGPT" matches "chatgpt" in com.openai.chatgpt)
+        if (!appName.isNullOrBlank()) {
+            val appClean = cleanString(appName)
+            val match = parts.find { it.equals(appClean, ignoreCase = true) }
+            if (match != null && isValidIdentifier(match.lowercase())) {
+                return match.lowercase()
+            }
+        }
+
+        // 2. Try deriving from package name (preferring the specific app segment over company/prefix)
         val candidate = extractPackageKeyword(packageName)
         val normalized = cleanString(candidate)
         if (normalized.isNotBlank() && isValidIdentifier(normalized)) {
             return normalized
         }
 
-        // Fallback to app name if available
+        // 3. Fallback to app name if available
         if (!appName.isNullOrBlank()) {
             val fromApp = cleanString(appName)
             if (fromApp.isNotBlank() && isValidIdentifier(fromApp)) {
@@ -32,7 +46,7 @@ object ResourceNameNormalizer {
             }
         }
 
-        // Final fallback: sanitized full package name
+        // 4. Final fallback: sanitized full package name
         val sanitizedPackage = packageName.replace('.', '_').replace('-', '_').lowercase()
         val finalClean = cleanString(sanitizedPackage)
         return if (isValidIdentifier(finalClean)) finalClean else "icon_${System.currentTimeMillis()}"
@@ -42,12 +56,15 @@ object ResourceNameNormalizer {
         val parts = packageName.split('.').filter { it.isNotBlank() }
         if (parts.isEmpty()) return "icon"
 
-        // Common package prefixes to strip
-        val commonPrefixes = setOf("com", "org", "net", "io", "android", "google", "app", "apps")
-        val filtered = parts.filterNot { commonPrefixes.contains(it.lowercase()) }
+        // If the last part is not a generic suffix or common prefix, prefer the last part (e.g. "chatgpt" in "com.openai.chatgpt")
+        val last = parts.last().lowercase()
+        if (!commonPrefixes.contains(last) && !genericSuffixes.contains(last)) {
+            return last
+        }
 
+        val filtered = parts.filterNot { commonPrefixes.contains(it.lowercase()) || genericSuffixes.contains(it.lowercase()) }
         return when {
-            filtered.isNotEmpty() -> filtered.first()
+            filtered.isNotEmpty() -> filtered.last()
             else -> parts.last()
         }
     }
